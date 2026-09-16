@@ -9,15 +9,25 @@ public class miguel_moviments : MonoBehaviour
     private bool jumpRequested;
     private bool isFacingRight = true;
     private bool isGrounded;
+    private bool isCrouching;
 
     [Header("Movimiento")]
     [SerializeField] private float speed = 8f;
     [SerializeField] private float jumpForce = 12f;
+    [SerializeField] private float crouchSpeedMultiplier = 0.5f; // 0 = quieto al agacharse, 1 = misma velocidad
 
     [Header("Detección de Suelo")]
     [SerializeField] private Transform groundCheck;
     [SerializeField] private float groundCheckRadius = 0.2f;
     [SerializeField] private LayerMask groundLayer;
+
+    [Header("Interacción")]
+    [SerializeField] private Transform interactPoint;
+    [SerializeField] private float interactRadius = 0.5f;
+    [SerializeField] private LayerMask interactableLayer;
+
+    // Otros scripts (ej. la mecánica de La Llorona) podrán consultar esto para saber si Miguel está escondido
+    public bool IsCrouching => isCrouching;
 
     void Start()
     {
@@ -41,17 +51,27 @@ public class miguel_moviments : MonoBehaviour
                 horizontal = 1f;
             }
 
-            // Capturamos el salto solo si está en el suelo
-            if (Keyboard.current.spaceKey.wasPressedThisFrame && isGrounded)
+            // Agacharse / esconderse
+            isCrouching = Keyboard.current.sKey.isPressed;
+
+            // Capturamos el salto solo si está en el suelo y no está agachado
+            if (Keyboard.current.spaceKey.wasPressedThisFrame && isGrounded && !isCrouching)
             {
                 jumpRequested = true;
             }
+
+            // Interactuar (hablar con la Ranita, abrir objetos, etc.)
+            if (Keyboard.current.eKey.wasPressedThisFrame)
+            {
+                TryInteract();
+            }
         }
 
-        // Actualizar la animación según el movimiento horizontal
+        // Actualizar las animaciones según el estado
         if (animator != null)
         {
-            animator.SetBool("running", horizontal != 0f);
+            animator.SetBool("running", horizontal != 0f && !isCrouching);
+            animator.SetBool("crouching", isCrouching);
         }
 
         // Determinar si debemos girar el sprite
@@ -73,8 +93,9 @@ public class miguel_moviments : MonoBehaviour
             isGrounded = Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, groundLayer);
         }
 
-        // Movimiento Horizontal
-        rb.linearVelocity = new Vector2(horizontal * speed, rb.linearVelocity.y);
+        // Movimiento Horizontal (más lento si está agachado)
+        float currentSpeed = isCrouching ? speed * crouchSpeedMultiplier : speed;
+        rb.linearVelocity = new Vector2(horizontal * currentSpeed, rb.linearVelocity.y);
 
         // Aplicar salto
         if (jumpRequested)
@@ -83,6 +104,18 @@ public class miguel_moviments : MonoBehaviour
             rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f);
             rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
             jumpRequested = false;
+        }
+    }
+
+    private void TryInteract()
+    {
+        if (interactPoint == null) return;
+
+        Collider2D hit = Physics2D.OverlapCircle(interactPoint.position, interactRadius, interactableLayer);
+        if (hit != null)
+        {
+            IInteractable interactable = hit.GetComponent<IInteractable>();
+            interactable?.Interact();
         }
     }
 
@@ -101,6 +134,13 @@ public class miguel_moviments : MonoBehaviour
         {
             Gizmos.color = Color.red;
             Gizmos.DrawWireSphere(groundCheck.position, groundCheckRadius);
+        }
+
+        // Visualizar el rango de interacción
+        if (interactPoint != null)
+        {
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawWireSphere(interactPoint.position, interactRadius);
         }
     }
 }
